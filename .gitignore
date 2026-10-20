@@ -104,6 +104,9 @@
 *.log
 **/logs/
 
+# App data
+backend/data/
+
 # Environment and secrets
 **/.env
 **/.env.local
