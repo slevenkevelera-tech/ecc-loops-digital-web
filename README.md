@@ -13,6 +13,8 @@ Crie agentes para tarefas diarias, ligue skills ECC e rode o loop:
 - Fila de tarefas diarias
 - Execucao de playbook por agente
 - API local em `/api` com proxy no frontend
+- Tokens `ecc_live_...` para criar agentes a partir de outros sites
+- Widget `/embed.js` para inserir um formulario de criacao de agente
 
 ## Como rodar
 
@@ -33,6 +35,38 @@ npm install
 
 Frontend: `http://localhost:5173`
 API: `http://localhost:3001`
+
+## API para outros sites
+
+1. Abra a aba Tokens no site publicado.
+2. Gere um token. Ele aparece uma unica vez.
+3. Chame a API autenticada:
+
+```bash
+curl -X POST https://ecc-loops-digital-web.onrender.com/api/v1/agents \
+  -H "Authorization: Bearer ecc_live_SEU_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"name":"Atendente","role":"Triar leads e responder clientes"}'
+```
+
+Endpoints autenticados:
+
+- `GET /api/v1/health`
+- `GET /api/v1/catalog`
+- `GET /api/v1/agents`
+- `POST /api/v1/agents`
+- `POST /api/v1/agents/suggest`
+- `GET /api/v1/tasks`
+- `POST /api/v1/tasks`
+- `POST /api/v1/tasks/:id/run`
+
+Widget HTML:
+
+```html
+<script src="https://ecc-loops-digital-web.onrender.com/embed.js"
+  data-token="ecc_live_SEU_TOKEN"
+  data-title="Criar agente ECC"></script>
+```
 
 ## Deploy no Render
 

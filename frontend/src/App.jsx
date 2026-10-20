@@ -4,6 +4,7 @@ const TABS = [
   { id: 'mesa', label: 'Mesa' },
   { id: 'agentes', label: 'Agentes' },
   { id: 'tarefas', label: 'Tarefas' },
+  { id: 'tokens', label: 'Tokens' },
   { id: 'skills', label: 'Skills' },
   { id: 'catalogo', label: 'Catalogo ECC' },
 ]
@@ -33,6 +34,9 @@ export default function App() {
   const [agents, setAgents] = useState([])
   const [tasks, setTasks] = useState([])
   const [runs, setRuns] = useState([])
+  const [tokens, setTokens] = useState([])
+  const [freshToken, setFreshToken] = useState(null)
+  const [copied, setCopied] = useState('')
   const [error, setError] = useState('')
   const [query, setQuery] = useState('')
   const [category, setCategory] = useState('todas')
@@ -50,20 +54,26 @@ export default function App() {
     agentId: '',
     priority: 'media',
   })
+  const [tokenForm, setTokenForm] = useState({
+    name: '',
+    origins: '',
+  })
 
   async function refresh() {
-    const [s, c, a, t, r] = await Promise.all([
+    const [s, c, a, t, r, k] = await Promise.all([
       api('/api/stats'),
       api('/api/catalog'),
       api('/api/agents'),
       api('/api/tasks'),
       api('/api/runs'),
+      api('/api/tokens'),
     ])
     setStats(s)
     setCatalog(c)
     setAgents(a)
     setTasks(t)
     setRuns(r)
+    setTokens(k)
     setTaskForm((prev) => ({ ...prev, agentId: prev.agentId || a[0]?.id || '' }))
   }
 
@@ -153,6 +163,88 @@ export default function App() {
     }
   }
 
+  async function createToken(event) {
+    event.preventDefault()
+    setBusy(true)
+    setError('')
+    try {
+      const created = await api('/api/tokens', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: tokenForm.name || 'site-externo',
+          origins: tokenForm.origins,
+        }),
+      })
+      setFreshToken(created)
+      setTokenForm({ name: '', origins: '' })
+      await refresh()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function revokeToken(id) {
+    setBusy(true)
+    setError('')
+    try {
+      await api(`/api/tokens/${id}`, { method: 'DELETE' })
+      if (freshToken?.id === id) setFreshToken(null)
+      await refresh()
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  function apiBase() {
+    if (typeof window === 'undefined') return 'https://ecc-loops-digital-web.onrender.com'
+    return window.location.origin
+  }
+
+  function snippetFetch(tokenValue) {
+    const host = apiBase()
+    return `curl -X POST ${host}/api/v1/agents \\
+  -H "Authorization: Bearer ${tokenValue}" \\
+  -H "Content-Type: application/json" \\
+  -d '{"name":"Atendente","role":"Triar leads e responder clientes"}'`
+  }
+
+  function snippetJs(tokenValue) {
+    const host = apiBase()
+    return `const res = await fetch("${host}/api/v1/agents", {
+  method: "POST",
+  headers: {
+    "Content-Type": "application/json",
+    "Authorization": "Bearer ${tokenValue}"
+  },
+  body: JSON.stringify({
+    name: "Atendente",
+    role: "Triar leads e responder clientes"
+  })
+})
+const agent = await res.json()`
+  }
+
+  function snippetEmbed(tokenValue) {
+    const host = apiBase()
+    return `<script src="${host}/embed.js"
+  data-token="${tokenValue}"
+  data-title="Criar agente ECC"></script>`
+  }
+
+  async function copyText(value, key) {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(key)
+      setTimeout(() => setCopied(''), 1600)
+    } catch {
+      setError('Nao foi possivel copiar')
+    }
+  }
+
   function toggleSkill(id) {
     setAgentForm((prev) => {
       const has = prev.skills.includes(id)
@@ -176,7 +268,7 @@ export default function App() {
             <div className="stat"><b>{stats.skills}</b><span>skills ECC</span></div>
             <div className="stat"><b>{stats.builtinAgents}</b><span>agentes base</span></div>
             <div className="stat"><b>{stats.customAgents}</b><span>agentes ativos</span></div>
-            <div className="stat"><b>{stats.tasks}</b><span>tarefas</span></div>
+            <div className="stat"><b>{stats.tokens ?? tokens.filter((item) => !item.revokedAt).length}</b><span>tokens</span></div>
           </div>
         )}
       </header>
@@ -272,6 +364,75 @@ export default function App() {
                   <p>{run.result?.summary}</p>
                 </div>
               ))}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {tab === 'tokens' && (
+        <div className="grid">
+          <section className="card">
+            <h2>Gerar token para outros sites</h2>
+            <p className="muted">Use o token nos seus sites para criar agentes via API. O valor aparece so uma vez.</p>
+            <form className="form" onSubmit={createToken} style={{ marginTop: 12 }}>
+              <input
+                placeholder="Nome. Ex.: odontomind, andrade-cardoso"
+                value={tokenForm.name}
+                onChange={(e) => setTokenForm({ ...tokenForm, name: e.target.value })}
+              />
+              <input
+                placeholder="Origens permitidas, opcional. Ex.: https://meu-site.com"
+                value={tokenForm.origins}
+                onChange={(e) => setTokenForm({ ...tokenForm, origins: e.target.value })}
+              />
+              <button className="primary" disabled={busy}>Gerar token</button>
+            </form>
+            {freshToken?.token && (
+              <div className="item" style={{ marginTop: 14 }}>
+                <div className="status">copie agora</div>
+                <h4>{freshToken.name}</h4>
+                <code className="token-value">{freshToken.token}</code>
+                <div className="row" style={{ marginTop: 8 }}>
+                  <button className="ghost" type="button" onClick={() => copyText(freshToken.token, 'token')}>
+                    {copied === 'token' ? 'Copiado' : 'Copiar token'}
+                  </button>
+                </div>
+                <h3 style={{ marginTop: 16 }}>JavaScript</h3>
+                <pre className="snippet">{snippetJs(freshToken.token)}</pre>
+                <button className="ghost" type="button" onClick={() => copyText(snippetJs(freshToken.token), 'js')}>
+                  {copied === 'js' ? 'Copiado' : 'Copiar JS'}
+                </button>
+                <h3 style={{ marginTop: 16 }}>curl</h3>
+                <pre className="snippet">{snippetFetch(freshToken.token)}</pre>
+                <button className="ghost" type="button" onClick={() => copyText(snippetFetch(freshToken.token), 'curl')}>
+                  {copied === 'curl' ? 'Copiado' : 'Copiar curl'}
+                </button>
+                <h3 style={{ marginTop: 16 }}>Embed no seu HTML</h3>
+                <pre className="snippet">{snippetEmbed(freshToken.token)}</pre>
+                <button className="ghost" type="button" onClick={() => copyText(snippetEmbed(freshToken.token), 'embed')}>
+                  {copied === 'embed' ? 'Copiado' : 'Copiar embed'}
+                </button>
+              </div>
+            )}
+          </section>
+          <section className="card">
+            <h2>Tokens ativos</h2>
+            <div className="list">
+              {tokens.map((item) => (
+                <article key={item.id} className="item">
+                  <h4>{item.name}</h4>
+                  <p>{item.prefix}... · {item.scopes?.join(', ')}</p>
+                  <div className="status">{item.revokedAt ? 'revogado' : 'ativo'} · {item.origins?.length ? item.origins.join(' ') : 'qualquer origem'}</div>
+                  {!item.revokedAt && (
+                    <div className="row" style={{ marginTop: 8 }}>
+                      <button className="ghost" type="button" disabled={busy} onClick={() => revokeToken(item.id)}>
+                        Revogar
+                      </button>
+                    </div>
+                  )}
+                </article>
+              ))}
+              {!tokens.length && <p className="empty">Nenhum token ainda. Gere um para ligar seus outros sites.</p>}
             </div>
           </section>
         </div>
