@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useState } from 'react'
+import Login from './Login.jsx'
+import Footer from './Footer.jsx'
+import CardStack from './CardStack.jsx'
+import SocialBridge from './SocialBridge.jsx'
+import Portfolio from './Portfolio.jsx'
 
 const TABS = [
   { id: 'mesa', label: 'Mesa' },
+  { id: 'portfolio', label: 'Portfolio' },
+  { id: 'redes', label: 'Redes' },
   { id: 'agentes', label: 'Agentes' },
   { id: 'tarefas', label: 'Tarefas' },
   { id: 'tokens', label: 'Tokens' },
@@ -28,6 +35,13 @@ function Chip({ children, on, onClick }) {
 }
 
 export default function App() {
+  const [authed, setAuthed] = useState(() => {
+    try {
+      return sessionStorage.getItem('ecc-access') === '1'
+    } catch {
+      return false
+    }
+  })
   const [tab, setTab] = useState('mesa')
   const [stats, setStats] = useState(null)
   const [catalog, setCatalog] = useState({ skills: [], agents: [], categories: [] })
@@ -185,6 +199,59 @@ export default function App() {
     }
   }
 
+  async function dispatchFolder(folder) {
+    const agent = agents.find((item) => item.sourceId === folder.agent) || agents[0]
+    if (!agent) {
+      setError('Crie um agente antes de disparar a pasta.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      await api('/api/tasks', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: folder.mission,
+          brief: folder.copy,
+          agentId: agent.id,
+          priority: 'alta',
+        }),
+      })
+      await refresh()
+      setTab('tarefas')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function boostSocial(social, agent, href) {
+    if (!agent) {
+      setError('Nenhum agente disponivel para impulsionar esta rede.')
+      return
+    }
+    setBusy(true)
+    setError('')
+    try {
+      await api('/api/tasks', {
+        method: 'POST',
+        body: JSON.stringify({
+          title: `Impulsionar ${social.name}`,
+          brief: `Escalar vendas e visualizacoes em ${social.name}. Objetivo: ${social.goal}. Perfil: ${href || 'link pendente — agente opera mesmo assim'}.`,
+          agentId: agent.id,
+          priority: 'alta',
+        }),
+      })
+      await refresh()
+      setTab('tarefas')
+    } catch (err) {
+      setError(err.message)
+    } finally {
+      setBusy(false)
+    }
+  }
+
   async function revokeToken(id) {
     setBusy(true)
     setError('')
@@ -253,11 +320,27 @@ const agent = await res.json()`
     })
   }
 
+  if (!authed) {
+    return (
+      <Login
+        onAccess={() => {
+          try {
+            sessionStorage.setItem('ecc-access', '1')
+          } catch {
+            /* ignore */
+          }
+          setAuthed(true)
+        }}
+      />
+    )
+  }
+
   return (
     <div className="shell">
       <header className="topbar">
         <div className="brand">
-          <h1>ECC Loops Digital</h1>
+          <p className="ai-kicker">ECC LOOPS  /  ESTUDIO AUTONOMO</p>
+          <h1>Inteligencia em movimento.</h1>
           <p>
             Mesa operacional para criar agentes, ligar as 311 skills do ECC e despachar
             tarefas diarias no loop plan, test, implement, review, verify, remember.
@@ -288,6 +371,8 @@ const agent = await res.json()`
       {error && <p className="muted">{error}</p>}
 
       {tab === 'mesa' && (
+        <>
+        <CardStack onDispatch={dispatchFolder} />
         <div className="grid">
           <section className="card">
             <h2>Novo agente</h2>
@@ -367,6 +452,13 @@ const agent = await res.json()`
             </div>
           </section>
         </div>
+        </>
+      )}
+
+      {tab === 'portfolio' && <Portfolio />}
+
+      {tab === 'redes' && (
+        <SocialBridge agents={agents} busy={busy} onBoost={boostSocial} />
       )}
 
       {tab === 'tokens' && (
@@ -575,6 +667,7 @@ const agent = await res.json()`
           </div>
         </section>
       )}
+      <Footer />
     </div>
   )
 }
